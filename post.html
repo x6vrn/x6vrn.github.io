@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Art of XS-Leak Attacks - Part 1 (Frame Counting)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #000;
+            color: #fff;
+            line-height: 1.6;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        a {
+            color: #0088ff;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            margin: 2rem 0 1rem 0;
+            color: #0088ff;
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            margin: 2rem 0 1rem 0;
+            color: #0088ff;
+        }
+
+        h3 {
+            font-size: 1.2rem;
+            margin: 1.5rem 0 1rem 0;
+            color: #0088ff;
+        }
+
+        p {
+            margin-bottom: 1rem;
+        }
+
+        /* Inline code */
+        p code, li code {
+            background-color: #1a1a1a;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #00d4ff;
+            font-size: 1em;
+            font-weight: 600;
+        }
+
+        pre {
+            background-color: #0a0a0a;
+            padding: 1rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+            border-left: 2px solid #0088ff;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+
+        pre code {
+            color: #fff;
+            font-family: 'Roboto Mono', monospace;
+            font-weight: 600;
+        }
+
+        blockquote {
+            border-left: 2px solid #0088ff;
+            padding-left: 1rem;
+            margin: 1rem 0;
+            color: #aaa;
+        }
+
+        ul, ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        .back {
+            color: #0088ff;
+            text-decoration: none;
+            margin-bottom: 2rem;
+            display: inline-block;
+        }
+
+        .back:hover {
+            text-decoration: underline;
+        }
+
+        /* Highlight.js overrides for better visibility */
+        .hljs {
+            background-color: #0a0a0a;
+            color: #fff;
+        }
+
+        .hljs-attr {
+            color: #61dafb;
+        }
+
+        .hljs-string {
+            color: #a8e61d;
+        }
+
+        .hljs-number {
+            color: #ff9e64;
+        }
+
+        .hljs-literal {
+            color: #ff9e64;
+        }
+
+        .hljs-type {
+            color: #61dafb;
+        }
+
+        .hljs-function {
+            color: #61dafb;
+        }
+
+        .hljs-comment {
+            color: #6a737d;
+        }
+
+        .hljs-keyword {
+            color: #ff6b9d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back">← Back</a>
+
+        <h1>The Art of XS-Leak Attacks - Part 1</h1>
+
+        <p>Hello, im here to explain the internals of XS-Leak attacks. i wont give you a high-level overview of the oracle with a payload and call it a day, im here to show you how the leaks work in chromium, line by line.</p>
+
+        <p>this all started because a friend asked me: "why is there no explanation of XS-Leak oracles in the chromium source code?" That question stuck in my head for days!. so i learned how chromium works (specific in blink), picked up C++, and took a deep dive into the source code to explain why and how the famous oracles in XS-Leaks actually work under the hood.</p>
+
+        <blockquote>
+            <p>if you dont know what XS-Leaks are, here are some resources:</p>
+            <p><a href="https://xsleaks.dev/">https://xsleaks.dev/</a></p>
+            <p><a href="https://book.jorianwoltjer.com/web/client-side/xs-leaks">https://book.jorianwoltjer.com/web/client-side/xs-leaks</a></p>
+        </blockquote>
+
+        <h2>Frame counting leak</h2>
+
+        <p>frame count leak is count how much is there frames in some page, we can count it even its in cross origin, also frames = (iframe, embed, object)
+        for example:</p>
+
+        <pre><code>w = window.open('https://example.com'); // example.com has 2 iframes
+w.length // 2</code></pre>
+
+        <p>ok we now the frame count is count frames in cross origin, but how its work internally</p>
+
+        <h3>How can we access to another window ?</h3>
+
+        <p>when we do window.open(), the browser process decides where to run the new page. if its same-site, it stays in the same renderer process and creates a LocalWindowProxy. if its cross-site, site isolation puts in a separate renderer process and creates a RemoteWindowProxy in your process to represent the cross-origin window. this proxy only expose the properties that marked [CrossOrigin] in the IDL, everything else is blocked</p>
+
+        <p>i will deep dive in remote window proxy cuz this is our scope:</p>
+
+        <p>first we need to know what is the remote window proxy.</p>
+
+        <p>remote window proxy is the way to communicate with the another window, for example when we do:</p>
+
+        <pre><code>w = window.open('https://example.com');</code></pre>
+
+        <p>we will open new window and we will set the key of the window <code>w</code>, ok what is the <code>w</code> and is it the really window?, its not <code>w</code> is the Window Proxy that will make us communicate with example.com window.</p>
+
+        <blockquote>
+            <p>how is this possible?</p>
+        </blockquote>
+
+        <p>well in the <code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:107-134</code></p>
+
+        <pre><code>void RemoteWindowProxy::CreateContext() {
+  // Create a new v8::Context with the window object as the global object
+  // (aka the inner global). Reuse the outer global proxy if it already exists.
+  v8::Local&lt;v8::ObjectTemplate&gt; global_template =
+      V8Window::GetWrapperTypeInfo()
+          -&gt;GetV8ClassTemplate(GetIsolate(), *world_)
+          .As&lt;v8::FunctionTemplate&gt;()
+          -&gt;InstanceTemplate();
+  CHECK(!global_template.IsEmpty());
+
+  v8::Local&lt;v8::Object&gt; global_proxy =
+      v8::Context::NewRemoteContext(GetIsolate(), global_template,
+                                    global_proxy_.Get(GetIsolate()))
+          .ToLocalChecked();
+  if (global_proxy_.IsEmpty())
+    global_proxy_.Reset(GetIsolate(), global_proxy);
+  else
+    DCHECK(global_proxy_ == global_proxy);
+  CHECK(!global_proxy_.IsEmpty());
+
+#if DCHECK_IS_ON()
+  DidAttachGlobalObject();
+#endif
+
+  DCHECK(lifecycle_ == Lifecycle::kContextIsUninitialized ||
+         lifecycle_ == Lifecycle::kGlobalObjectIsDetached);
+  lifecycle_ = Lifecycle::kContextIsInitialized;
+}</code></pre>
+
+        <p>in this part:</p>
+
+        <pre><code>  v8::Local&lt;v8::ObjectTemplate&gt; global_template =
+
+          -&gt;GetV8ClassTemplate(GetIsolate(), *world_)
+          .As&lt;v8::FunctionTemplate&gt;()
+          -&gt;InstanceTemplate();</code></pre>
+
+        <p>this builds the template that define what properties <code>w</code> has.
+        <code>V8Window::GetWrapperTypeInfo()</code> comes from v8_window.cc (built from the idl) this template includes cross origin properties for the remote dom window, like length.</p>
+
+        <pre><code>  v8::Local&lt;v8::Object&gt; global_proxy =
+      v8::Context::NewRemoteContext(GetIsolate(), global_template,
+                                    global_proxy_.Get(GetIsolate()))
+          .ToLocalChecked();</code></pre>
+
+        <p>this line creates our <code>w</code>. NewRemoteContext is V8 API that creates proxy object using template above. this proxy lives in our process but represents a window in another process, it only has the properties defined in <code>global_template</code></p>
+
+        <p>in the <code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:136-150</code></p>
+
+        <pre><code>void RemoteWindowProxy::SetupWindowPrototypeChain() {
+  // Associate the global proxy and its prototype chain with the
+  // corresponding native DOMWindow object.
+  DOMWindow* window = GetFrame()-&gt;DomWindow();
+  const WrapperTypeInfo* wrapper_type_info = window-&gt;GetWrapperTypeInfo();
+
+  // The global proxy object.  Note this is not the global object.
+  v8::Local&lt;v8::Object&gt; global_proxy = global_proxy_.Get(GetIsolate());
+  // Set a link from both JSGlobalProxy and its hidden prototype (remote
+  // interceptor object) to the native DOMWindow object.
+  V8DOMWrapper::SetNativeInfoForGlobal(GetIsolate(), global_proxy, window);
+  CHECK(global_proxy == window-&gt;AssociateWithWrapper(GetIsolate(), world_,
+                                                     wrapper_type_info,
+                                                     global_proxy));
+}</code></pre>
+
+        <p>in this part:</p>
+
+        <pre><code>DOMWindow* window = GetFrame()-&gt;DomWindow();</code></pre>
+
+        <p>gets the Domwindow C++ object associated with this remote frame</p>
+
+        <p>in the <code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:143-146</code></p>
+
+        <pre><code>  v8::Local&lt;v8::Object&gt; global_proxy = global_proxy_.Get(GetIsolate());
+  // Set a link from both JSGlobalProxy and its hidden prototype (remote
+  // interceptor object) to the native DOMWindow object.
+  V8DOMWrapper::SetNativeInfoForGlobal(GetIsolate(), global_proxy, window);</code></pre>
+
+        <p>link the js proxy object (our <code>w</code>) to the C++ Domwindow object.</p>
+
+        <p>So when you call w.length, V8 hits the proxy -&gt; finds the linked DomWindow -&gt; calls DomWindow::length()</p>
+
+        <pre><code>  CHECK(global_proxy == window-&gt;AssociateWithWrapper(GetIsolate(), world_,
+                                                     wrapper_type_info,
+                                                     global_proxy));</code></pre>
+
+        <p>finalizes the 2-way link, now DomWindow knows about the proxy and the proxy knows about DomWindow</p>
+
+        <p>so when you call w.length:</p>
+
+        <pre><code>w                          -&gt; global_proxy (created by NewRemoteContext)
+  .length                  -&gt; V8 checks global_template -&gt; "length" is allowed
+    -&gt; finds linked DOMWindow via SetNativeInfoForGlobal
+      -&gt; calls DOMWindow::length()
+        -&gt; GetFrame()-&gt;Tree().ScopedChildCount()
+          -&gt; returns 3</code></pre>
+
+        <h3>How it count ?</h3>
+
+        <p>so we now know how window refernced and how it works, now ill explain how chromium counts the frames inside window</p>
+
+        <p>in <code>third_party/blink/renderer/core/frame/dom_window.cc:310-314</code></p>
+
+        <pre><code>unsigned DOMWindow::length() const {
+  RecordWindowProxyAccessMetrics(
+      mojom::blink::WindowProxyAccessType::kLength);
+  return GetFrame() ? GetFrame()-&gt;Tree().ScopedChildCount() : 0;
+}</code></pre>
+
+        <p>this is the .length function, in this line <code>return GetFrame() ? GetFrame()-&gt;Tree().ScopedChildCount() : 0;</code> the GetFrame() is function that checks if the frame is exist and not null, the comment below explain everything</p>
+
+        <p><code>third_party/blink/renderer/core/frame/dom_window.h:62-76</code></p>
+
+        <pre><code>  Frame* GetFrame() const {
+    // A Frame is typically reused for navigations. If |frame_| is not null,
+    // two conditions must always be true:
+    // - |frame_-&gt;domWindow()| must point back to this DOMWindow. If it does
+    //   not, it is easy to introduce a bug where script execution uses the
+    //   wrong DOMWindow (which may be cross-origin).
+    // - |frame_| must be attached, i.e. |frame_-&gt;page()| must not be null.
+    //   If |frame_-&gt;page()| is null, this indicates a bug where the frame was
+    //   detached but |frame_| was not set to null. This bug can lead to
+    //   issues where executing script incorrectly schedules work on a detached
+    //   frame.
+    SECURITY_DCHECK(!frame_ ||
+                    (frame_-&gt;DomWindow() == this &amp;&amp; frame_-&gt;GetPage()));
+    return frame_.Get();
+  }</code></pre>
+
+        <p>ok lets back to length() function, its check if the frame exist and if its exist it will get FrameTree by calling Tree(), Tree() function return parent/child relationships between frames</p>
+
+        <p>after that it will call ScopedChildCount() function:</p>
+
+        <p><code>third_party/blink/renderer/core/page/frame_tree.cc:164-176</code></p>
+
+        <pre><code>unsigned FrameTree::ScopedChildCount() const {
+  if (scoped_child_count_ == kInvalidChildCount) {
+    unsigned scoped_count = 0;
+    for (Frame* child = FirstChild(); child;
+         child = child-&gt;Tree().NextSibling()) {
+      if (child-&gt;Client()-&gt;InShadowTree())
+        continue;
+      scoped_count++;
+    }
+    scoped_child_count_ = scoped_count;
+  }
+  return scoped_child_count_;
+}</code></pre>
+
+        <p>this function the core of the count, first <code>scoped_child_count_ == kInvalidChildCount</code> it checks if the count didnt cached because:</p>
+
+        <p><code>third_party/blink/renderer/core/page/frame_tree.cc:43</code></p>
+
+        <pre><code>const unsigned kInvalidChildCount = ~0U;</code></pre>
+
+        <p>and</p>
+
+        <p><code>third_party/blink/renderer/core/page/frame_tree.cc:47-48</code></p>
+
+        <pre><code> FrameTree::FrameTree(Frame* this_frame)
+    : this_frame_(this_frame), scoped_child_count_(kInvalidChildCount) {}</code></pre>
+
+        <p>they make a special number that checks if the frames cached or not</p>
+
+        <p>the special number is bitwise NOT of unsigned zero=4294967295 and they set the number in kInvalidChildCount and scoped_child_count_.</p>
+
+        <p>if the scoped_child_count_ and kInvalidChildCount = 4294967295 thats means they didnt counted yet so it will the for loop inside the if condition.</p>
+
+        <pre><code>    for (Frame* child = FirstChild(); child;
+         child = child-&gt;Tree().NextSibling()) {
+      if (child-&gt;Client()-&gt;InShadowTree())
+        continue;
+      scoped_count++;
+    }</code></pre>
+
+        <p>in the for loop it linked list traversal. start with the first child frame until child is null, and each iteration move to next sibling</p>
+
+        <pre><code>if (child-&gt;Client()-&gt;InShadowTree())
+    continue;</code></pre>
+
+        <p>if the frame lives inside Shadow dom skip it and dont count it.</p>
+
+        <p>ok now we know how the frames are count, but why they are can used even in cross origin ?.</p>
+
+        <h2>The key of the Frame counting</h2>
+
+        <p>first we need to know what is Web IDL</p>
+
+        <blockquote>
+            <p>Web IDL, that can be used to describe interfaces that are intended to be implemented in web browsers. Web IDL is an IDL variant with a number of features that allow the behavior of common script objects in the web platform to be specified more readily. How interfaces described with Web IDL correspond to constructs within JavaScript execution environments</p>
+        </blockquote>
+
+        <p>if you need know more about Web IDL:</p>
+
+        <p><a href="https://www.chromium.org/developers/web-idl-interfaces/#web-idl">https://www.chromium.org/developers/web-idl-interfaces/#web-idl</a></p>
+
+        <p><a href="https://webidl.spec.whatwg.org/">https://webidl.spec.whatwg.org/</a></p>
+
+        <p>ok now we know what is Web IDL</p>
+
+        <p><code>third_party/blink/renderer/core/frame/window.idl:62</code></p>
+
+        <pre><code>[Replaceable, CrossOrigin, Measure] readonly attribute unsigned long length;</code></pre>
+
+        <p>as we can see the length attribute inside window set as CrossOrigin</p>
+
+        <p>so we can access the .length for CrossOrigin site, and THIS IS THE KEY OF THE WHOLE LEAK!</p>
+
+        <h2>Mitigations</h2>
+
+        <p>to mitigate this type of oracles, you can use</p>
+
+        <ol>
+            <li>COOP (<code>Cross-Origin-Opener-Policy: same-origin</code>), severs the window.open() reference, the proxy becomes useless</li>
+            <li>use Shadow Dom, as i mentioned it before if the frame is in shadow dom the chromium wont count it</li>
+        </ol>
+
+        <p><strong>See you in part 2 :)</strong></p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>
+        hljs.highlightAll();
+    </script>
+</body>
+</html>
