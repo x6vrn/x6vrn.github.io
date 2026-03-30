@@ -36,6 +36,17 @@
             text-decoration: underline;
         }
 
+        a code {
+            color: #00d4ff;
+            background-color: #1a1a1a;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        a:hover code {
+            text-decoration: underline;
+        }
+
         h1 {
             font-size: 1.8rem;
             margin: 2rem 0 1rem 0;
@@ -154,10 +165,7 @@
             display: flex;
             justify-content: center;
             margin: 2rem 0;
-            padding: 2rem;
-            background-color: #0a0a0a;
-            border-radius: 4px;
-            border-left: 2px solid #0088ff;
+            padding: 1rem 0;
             overflow-x: auto;
         }
 
@@ -211,7 +219,7 @@ w.length // 2</code></pre>
             <p>how is this possible?</p>
         </blockquote>
 
-        <p>well in the <code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:107-134</code></p>
+        <p>well in the <a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=107-134"><code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:107-134</code></a></p>
 
         <pre><code>void RemoteWindowProxy::CreateContext() {
   // Create a new v8::Context with the window object as the global object
@@ -260,7 +268,7 @@ w.length // 2</code></pre>
 
         <p>this line creates our <code>w</code>. NewRemoteContext is V8 API that creates proxy object using template above. this proxy lives in our process but represents a window in another process, it only has the properties defined in <code>global_template</code></p>
 
-        <p>in the <code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:136-150</code></p>
+        <p>in the <a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=136-150"><code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:136-150</code></a></p>
 
         <pre><code>void RemoteWindowProxy::SetupWindowPrototypeChain() {
   // Associate the global proxy and its prototype chain with the
@@ -284,7 +292,7 @@ w.length // 2</code></pre>
 
         <p>gets the Domwindow C++ object associated with this remote frame</p>
 
-        <p>in the <code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:143-146</code></p>
+        <p>in the <a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=143-146"><code>third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:143-146</code></a></p>
 
         <pre><code>  v8::Local&lt;v8::Object&gt; global_proxy = global_proxy_.Get(GetIsolate());
   // Set a link from both JSGlobalProxy and its hidden prototype (remote
@@ -314,7 +322,7 @@ w.length // 2</code></pre>
 
         <p>so we now know how window refernced and how it works, now ill explain how chromium counts the frames inside window</p>
 
-        <p>in <code>third_party/blink/renderer/core/frame/dom_window.cc:310-314</code></p>
+        <p>in <a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/dom_window.cc;l=310-314"><code>third_party/blink/renderer/core/frame/dom_window.cc:310-314</code></a></p>
 
         <pre><code>unsigned DOMWindow::length() const {
   RecordWindowProxyAccessMetrics(
@@ -324,7 +332,7 @@ w.length // 2</code></pre>
 
         <p>this is the .length function, in this line <code>return GetFrame() ? GetFrame()-&gt;Tree().ScopedChildCount() : 0;</code> the GetFrame() is function that checks if the frame is exist and not null, the comment below explain everything</p>
 
-        <p><code>third_party/blink/renderer/core/frame/dom_window.h:62-76</code></p>
+        <p><a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/dom_window.h;l=62-76"><code>third_party/blink/renderer/core/frame/dom_window.h:62-76</code></a></p>
 
         <pre><code>  Frame* GetFrame() const {
     // A Frame is typically reused for navigations. If |frame_| is not null,
@@ -346,7 +354,7 @@ w.length // 2</code></pre>
 
         <p>after that it will call ScopedChildCount() function:</p>
 
-        <p><code>third_party/blink/renderer/core/page/frame_tree.cc:164-176</code></p>
+        <p><a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=164-176"><code>third_party/blink/renderer/core/page/frame_tree.cc:164-176</code></a></p>
 
         <pre><code>unsigned FrameTree::ScopedChildCount() const {
   if (scoped_child_count_ == kInvalidChildCount) {
@@ -364,13 +372,13 @@ w.length // 2</code></pre>
 
         <p>this function the core of the count, first <code>scoped_child_count_ == kInvalidChildCount</code> it checks if the count didnt cached because:</p>
 
-        <p><code>third_party/blink/renderer/core/page/frame_tree.cc:43</code></p>
+        <p><a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=43"><code>third_party/blink/renderer/core/page/frame_tree.cc:43</code></a></p>
 
         <pre><code>const unsigned kInvalidChildCount = ~0U;</code></pre>
 
         <p>and</p>
 
-        <p><code>third_party/blink/renderer/core/page/frame_tree.cc:47-48</code></p>
+        <p><a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=47-48"><code>third_party/blink/renderer/core/page/frame_tree.cc:47-48</code></a></p>
 
         <pre><code> FrameTree::FrameTree(Frame* this_frame)
     : this_frame_(this_frame), scoped_child_count_(kInvalidChildCount) {}</code></pre>
@@ -413,7 +421,7 @@ w.length // 2</code></pre>
 
         <p>ok now we know what is Web IDL</p>
 
-        <p><code>third_party/blink/renderer/core/frame/window.idl:62</code></p>
+        <p><a target="_blank" href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/window.idl;l=62"><code>third_party/blink/renderer/core/frame/window.idl:62</code></a></p>
 
         <pre><code>[Replaceable, CrossOrigin, Measure] readonly attribute unsigned long length;</code></pre>
 
