@@ -6,6 +6,7 @@
     <title>The Art of XS-Leak Attacks - Part 1 (Frame Counting)</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -146,6 +147,23 @@
 
         .hljs-keyword {
             color: #ff6b9d;
+        }
+
+        /* Mermaid diagram styling */
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            margin: 2rem 0;
+            padding: 2rem;
+            background-color: #0a0a0a;
+            border-radius: 4px;
+            border-left: 2px solid #0088ff;
+            overflow-x: auto;
+        }
+
+        .mermaid svg {
+            max-width: 100%;
+            height: auto;
         }
     </style>
 </head>
@@ -413,11 +431,84 @@ w.length // 2</code></pre>
         </ol>
 
         <p><strong>See you in part 2 :)</strong></p>
+
+        <h2>Visual Overview</h2>
+
+        <p>if you dont get it, i made a graph that explain everything</p>
+
+        <div class="mermaid">
+flowchart TD
+    A["w.length (JavaScript)"] --> B
+
+    subgraph RemoteWindowProxy["RemoteWindowProxy (remote_window_proxy.cc)"]
+        B["V8Window::GetWrapperTypeInfo()
+        ─────────────────────
+        builds global_template from IDL"] --> C
+        C["v8::Context::NewRemoteContext()
+        ─────────────────────
+        creates global_proxy (our 'w')"] --> D
+        D["SetNativeInfoForGlobal()
+        ─────────────────────
+        links global_proxy → DOMWindow"] --> E
+        E["AssociateWithWrapper()
+        ─────────────────────
+        2-way link: DOMWindow ↔ proxy"]
+    end
+
+    E --> F
+
+    subgraph IDLCheck["CrossOrigin check (window.idl)"]
+        F{"[CrossOrigin] on 'length'?"}
+        F -->|yes| G["skip security check"]
+        F -->|no| H["ShouldAllowAccessTo()
+        ─────────────────────
+        SecurityError thrown"]
+    end
+
+    G --> J
+
+    subgraph DOMWindowLength["DOMWindow::length() (dom_window.cc:310)"]
+        J{"GetFrame() (dom_window.h:62)
+        ─────────────────────
+        returns Frame* or null"}
+        J -->|null| K["return 0"]
+        J -->|not null| L["Frame→Tree()
+        ─────────────────────
+        get FrameTree"]
+    end
+
+    L --> M
+
+    subgraph ScopedCount["ScopedChildCount() (frame_tree.cc:164)"]
+        M{"scoped_child_count_ == ~0U?
+        ─────────────────────
+        check if cache is invalid (4294967295)"}
+        M -->|"no, cached"| N["return cached count"]
+        M -->|"yes, not cached"| O["for child = FirstChild();
+        child; child = NextSibling()"]
+        O --> P{"child→Client()→InShadowTree()
+        ─────────────────────
+        is frame inside Shadow DOM?"}
+        P -->|yes| Q["continue (skip)"]
+        P -->|no| R["scoped_count++"]
+        Q --> O
+        R --> O
+        O -->|"loop done"| S["scoped_child_count_ = scoped_count
+        ─────────────────────
+        cache result for next access"]
+    end
+
+    S --> T["return scoped_child_count_
+    ─────────────────────
+    back to JS as w.length value"]
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script>
         hljs.highlightAll();
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+        mermaid.contentLoaded();
     </script>
 </body>
 </html>
