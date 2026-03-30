@@ -252,8 +252,8 @@ w.length // 2</code></pre>
 
         <p>in this part:</p>
 
-        <pre><code>  v8::Local&lt;v8::ObjectTemplate&gt; global_template =
-
+        <pre><code>    v8::Local&lt;v8::ObjectTemplate&gt; global_template =
+      V8Window::GetWrapperTypeInfo()
           -&gt;GetV8ClassTemplate(GetIsolate(), *world_)
           .As&lt;v8::FunctionTemplate&gt;()
           -&gt;InstanceTemplate();</code></pre>
