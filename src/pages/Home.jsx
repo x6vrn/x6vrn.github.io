@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
+import ArrowUpRight from '../components/ArrowUpRight';
 
 function useLandingEffects() {
   const profileRef = useRef(null);
@@ -64,8 +65,8 @@ export default function Home() {
           </span></h1>
           <p className="profile-role">Just a web security researcher interested in web exploitation and finding weird bugs</p>
           <div className="social-links">
-            <a href="https://x.com/x6vrn" target="_blank" rel="noopener noreferrer">X <span>@x6vrn ↗</span></a>
-            <a href="https://www.linkedin.com/in/anas-almizani-5a6258271/" target="_blank" rel="noopener noreferrer">LinkedIn <span aria-hidden="true">↗</span></a>
+            <a href="https://x.com/x6vrn" target="_blank" rel="noopener noreferrer">X <span>@x6vrn <ArrowUpRight /></span></a>
+            <a href="https://www.linkedin.com/in/anas-almizani-5a6258271/" target="_blank" rel="noopener noreferrer">LinkedIn <span aria-hidden="true"><ArrowUpRight /></span></a>
           </div>
         </div>
         <figure className="profile-art" ref={artRef}>
@@ -77,14 +78,14 @@ export default function Home() {
         <article className="post-entry">
           <a className="post-link" href="cspt-to-ato.html">
             <div className="post-meta"><span>CSPT <span className="meta-separator">/</span> WEB SECURITY</span><span>EN / AR</span></div>
-            <div className="post-title-row"><h3>CSPT + Open Redirect = Account Takeover?</h3><span className="post-arrow" aria-hidden="true">↗</span></div>
+            <div className="post-title-row"><h3>CSPT + Open Redirect = Account Takeover?</h3><span className="post-arrow" aria-hidden="true"><ArrowUpRight /></span></div>
             <p>chaining cspt and open redirects to leak authentication tokens.</p>
           </a>
         </article>
         <article className="post-entry">
           <a className="post-link" href="xsleaks-part1.html">
             <div className="post-meta"><span>XS-LEAKS <span className="meta-separator">/</span> CHROMIUM</span><span>7 MIN READ</span></div>
-            <div className="post-title-row"><h3>The Art of XS-Leak Attacks</h3><span className="post-arrow" aria-hidden="true">↗</span></div>
+            <div className="post-title-row"><h3>The Art of XS-Leak Attacks</h3><span className="post-arrow" aria-hidden="true"><ArrowUpRight /></span></div>
             <p>A deep dive into frame-counting leaks and how they work internally in Chromium.</p>
           </a>
         </article>

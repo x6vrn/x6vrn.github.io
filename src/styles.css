@@ -117,6 +117,7 @@ button { cursor: pointer; font: inherit; }
 .post-link { display: block; padding: 26px 0 30px; text-decoration: none; }
 .post-meta { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 10px; color: var(--muted); font: 9px/1.7 var(--mono); letter-spacing: .8px; }
 .meta-separator { color: #59616d; margin: 0 9px; }
+.arrow-up-right { display: inline-block; width: 1em; height: 1em; vertical-align: -.125em; flex-shrink: 0; }
 .post-title-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .post-title-row h3 { font: 500 34px/1.16 var(--serif); letter-spacing: -.4px; margin: 16px 0 11px; }
 .post-title-row h3 > span { display: block; color: var(--muted); font-size: 26px; font-weight: 400; margin-top: 5px; }

@@ -11,7 +11,7 @@
     "ar": "cspt-to-ato-ar.html"
   },
   "sourceFile": "CSPT_to_ATO.md",
-  "sourceSha256": "93748d3bb23c174d5cd361827db490e2a1978d02f73ce11b206532431b17b1b2",
+  "sourceSha256": "7aafb2d167113e952d38ba827641c1878491136d7deb85047bf385a149d81c19",
   "body": [
     {
       "tag": "h2",
@@ -26,7 +26,7 @@
       "tag": "p",
       "props": {},
       "children": [
-        "CSPT (Client side path traversal) its a vuln about path traversal in the browwser, URLs. it happens when an application fetches some path with your input in it, allowing you to use ",
+        "CSPT (Client side path traversal) its a vulnerability about path traversal in the browwser, URLs. it happens when an application fetches some path with your input in it, allowing you to use ",
         {
           "tag": "code",
           "props": {
