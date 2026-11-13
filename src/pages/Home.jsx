@@ -69,7 +69,7 @@ export default function Home() {
           </div>
         </div>
         <figure className="profile-art" ref={artRef}>
-          <img src="assets/profile.gif" alt="Metal Gear character artwork from the original homepage" width="498" height="578" fetchPriority="high" />
+          <img src="blog-assets/profile.gif" alt="Metal Gear character artwork from the original homepage" width="498" height="578" fetchPriority="high" />
         </figure>
       </section>
       <section className="writing-section" id="writing" aria-labelledby="writing-title">

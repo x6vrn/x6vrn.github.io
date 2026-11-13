@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   base: '/',
   build: {
+    // The account already has a separate Pages project at /assets/.
+    assetsDir: 'blog-assets',
     rolldownOptions: {
       input: {
         home: resolve(import.meta.dirname, 'index.html'),

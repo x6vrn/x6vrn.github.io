@@ -34,7 +34,7 @@ export async function renderMermaidDiagram(source) {
   const backgroundColor = directive ? JSON.parse(directive[1]).themeVariables?.background || '#090b0d' : '#090b0d';
   const hash = createHash('sha256').update(source).update('\0fit-note-labels-v1').digest('hex');
   const basename = `cspt-sequence-${hash.slice(0, 12)}`;
-  const src = `assets/${basename}.svg`;
+  const src = `blog-assets/${basename}.svg`;
   const output = resolve('public', src);
   try {
     const cached = await readFile(output, 'utf8');
@@ -42,7 +42,7 @@ export async function renderMermaidDiagram(source) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const input = resolve('public/assets', `${basename}.mmd`);
+  const input = resolve('public/blog-assets', `${basename}.mmd`);
   await writeFile(input, source);
   const temporary = resolve('node_modules/.cache/anas-mermaid');
   await mkdir(temporary, { recursive: true });

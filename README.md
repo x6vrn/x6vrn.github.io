@@ -26,7 +26,7 @@ The build renders the React pages into HTML in `dist/` and hydrates them in the 
 
 The `.github/workflows/pages.yml` workflow installs the locked dependencies, builds the site, and deploys only `dist/` to GitHub Pages when `main` changes. It can also be started manually from the Actions tab. The workflow pins its actions to commit SHAs.
 
-Pages uses **GitHub Actions** as its publishing source. Vite's base path is `/` for the root site at https://x6vrn.github.io/. The Google verification HTML is copied from `public/` into the site root during the build.
+Pages uses **GitHub Actions** as its publishing source. Vite's base path is `/` for the root site at https://x6vrn.github.io/. Assets use `/blog-assets/` to avoid the account's existing `/assets/` project site. The Google verification HTML is copied from `public/` into the site root during the build.
 
 ## Articles and languages
 
@@ -44,7 +44,7 @@ Arabic prose uses RTL markup, while code, URLs, and English technical terms are 
 - `src/components/`: shared layout, code copying, and diagram components.
 - `src/content/`: article content nodes.
 - `src/styles.css` and `src/arabic-font.css`: styling and local font rules.
-- `public/assets/`: fonts, original homepage artwork, and diagrams.
+- `public/blog-assets/`: fonts, original homepage artwork, and diagrams.
 - `scripts/content.mjs`: Markdown conversion without typography rewriting.
 - `scripts/build.mjs`: Vite build and React HTML generation.
 - `scripts/diagrams.mjs`: Mermaid rendering and label fitting.
@@ -53,8 +53,8 @@ Only the configured page entries, application content, and `public/` assets ente
 
 ## Mermaid diagrams
 
-Mermaid fences are rendered into cached SVGs in `public/assets/`. The browser receives the SVG rather than the Mermaid runtime. Note boxes are fitted to the rendered text to prevent overflow, and each diagram can be opened at full size.
+Mermaid fences are rendered into cached SVGs in `public/blog-assets/`. The browser receives the SVG rather than the Mermaid runtime. Note boxes are fitted to the rendered text to prevent overflow, and each diagram can be opened at full size.
 
 Existing SVGs are reused during builds. Rendering a new or edited Mermaid definition requires a local Chrome or Chromium installation; common locations are detected automatically. Set `MERMAID_CHROME_PATH` if the browser is elsewhere. Package installation skips browser downloads.
 
-Fonts are hosted locally, with licenses in `public/assets/fonts/`. The site has no analytics, external asset requests, favicon, or light theme.
+Fonts are hosted locally, with licenses in `public/blog-assets/fonts/`. The site has no analytics, external asset requests, favicon, or light theme.

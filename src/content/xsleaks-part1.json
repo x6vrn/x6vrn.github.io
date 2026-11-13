@@ -1186,7 +1186,7 @@
         {
           "tag": "a",
           "props": {
-            "href": "assets/frame-counting.svg",
+            "href": "blog-assets/frame-counting.svg",
             "rel": "noopener noreferrer",
             "target": "_blank"
           },
@@ -1197,7 +1197,7 @@
                 "alt": "Frame counting flowchart. w.length passes through RemoteWindowProxy and a CrossOrigin IDL check to DOMWindow::length(). If a frame exists, FrameTree::ScopedChildCount() counts non-shadow child frames or returns the cached count.",
                 "height": 2908,
                 "loading": "lazy",
-                "src": "assets/frame-counting.svg",
+                "src": "blog-assets/frame-counting.svg",
                 "width": 1137
               },
               "children": []
