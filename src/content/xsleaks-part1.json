@@ -1,0 +1,1232 @@
+{
+  "title": "The Art of XS-Leak Attacks - Part 1",
+  "subtitle": "Frame Counting",
+  "minutes": 7,
+  "toc": [
+    {
+      "id": "frame-counting-leak",
+      "title": "Frame counting leak",
+      "level": "h2"
+    },
+    {
+      "id": "how-can-we-access-to-another-window",
+      "title": "How can we access to another window ?",
+      "level": "h3"
+    },
+    {
+      "id": "how-it-count",
+      "title": "How it count ?",
+      "level": "h3"
+    },
+    {
+      "id": "the-key-of-the-frame-counting",
+      "title": "The key of the Frame counting",
+      "level": "h2"
+    },
+    {
+      "id": "mitigations",
+      "title": "Mitigations",
+      "level": "h2"
+    },
+    {
+      "id": "visual-overview",
+      "title": "Visual Overview",
+      "level": "h2"
+    }
+  ],
+  "body": [
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "Hello, im here to explain the internals of XS-Leak attacks. i wont give you a high-level overview of the oracle with a payload and call it a day, im here to show you how the leaks work in chromium, line by line."
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "this all started because a friend asked me: \"why is there no explanation of XS-Leak oracles in the chromium source code?\" That question stuck in my head for days!. so i learned how chromium works (specific in blink), picked up C++, and took a deep dive into the source code to explain why and how the famous oracles in XS-Leaks actually work under the hood."
+      ]
+    },
+    "\n",
+    {
+      "tag": "blockquote",
+      "props": {},
+      "children": [
+        "\n",
+        {
+          "tag": "p",
+          "props": {},
+          "children": [
+            "if you dont know what XS-Leaks are, here are some resources:"
+          ]
+        },
+        "\n",
+        {
+          "tag": "p",
+          "props": {},
+          "children": [
+            {
+              "tag": "a",
+              "props": {
+                "href": "https://xsleaks.dev/"
+              },
+              "children": [
+                "https://xsleaks.dev/"
+              ]
+            }
+          ]
+        },
+        "\n",
+        {
+          "tag": "p",
+          "props": {},
+          "children": [
+            {
+              "tag": "a",
+              "props": {
+                "href": "https://book.jorianwoltjer.com/web/client-side/xs-leaks"
+              },
+              "children": [
+                "https://book.jorianwoltjer.com/web/client-side/xs-leaks"
+              ]
+            }
+          ]
+        },
+        "\n"
+      ]
+    },
+    "\n",
+    {
+      "tag": "h2",
+      "props": {
+        "id": "frame-counting-leak"
+      },
+      "children": [
+        "Frame counting leak"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "frame count leak is count how much is there frames in some page, we can count it even its in cross origin, also frames = (iframe, embed, object)\n        for example:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-javascript"
+          },
+          "children": [
+            "w = window.open('https://example.com'); // example.com has 2 iframes\nw.length // 2"
+          ]
+        }
+      ],
+      "blockNumber": 1
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "ok we know the frame count is count frames in cross origin, but how it works internally"
+      ]
+    },
+    "\n",
+    {
+      "tag": "h3",
+      "props": {
+        "id": "how-can-we-access-to-another-window"
+      },
+      "children": [
+        "How can we access to another window ?"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "when we do window.open(), the browser process decides where to run the new page. if its same-site, it stays in the same renderer process and creates a LocalWindowProxy. if its cross-site, site isolation puts in a separate renderer process and creates a RemoteWindowProxy in your process to represent the cross-origin window. this proxy only expose the properties that marked [CrossOrigin] in the IDL, everything else is blocked"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "i will deep dive in remote window proxy cuz this is our scope:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "first we need to know what is the remote window proxy."
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "remote window proxy is the way to communicate with the another window, for example when we do:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-javascript"
+          },
+          "children": [
+            "w = window.open('https://example.com');"
+          ]
+        }
+      ],
+      "blockNumber": 2
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "we will open new window and we will set the key of the window ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "w"
+          ]
+        },
+        ", ok what is the ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "w"
+          ]
+        },
+        " and is it the really window?, its not ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "w"
+          ]
+        },
+        " is the Window Proxy that will make us communicate with example.com window."
+      ]
+    },
+    "\n",
+    {
+      "tag": "blockquote",
+      "props": {},
+      "children": [
+        "\n",
+        {
+          "tag": "p",
+          "props": {},
+          "children": [
+            "how is this possible?"
+          ]
+        },
+        "\n"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "well in the ",
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=107-134",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:107-134"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "void RemoteWindowProxy::CreateContext() {\n  // Create a new v8::Context with the window object as the global object\n  // (aka the inner global). Reuse the outer global proxy if it already exists.\n  v8::Local<v8::ObjectTemplate> global_template =\n      V8Window::GetWrapperTypeInfo()\n          ->GetV8ClassTemplate(GetIsolate(), *world_)\n          .As<v8::FunctionTemplate>()\n          ->InstanceTemplate();\n  CHECK(!global_template.IsEmpty());\n\n  v8::Local<v8::Object> global_proxy =\n      v8::Context::NewRemoteContext(GetIsolate(), global_template,\n                                    global_proxy_.Get(GetIsolate()))\n          .ToLocalChecked();\n  if (global_proxy_.IsEmpty())\n    global_proxy_.Reset(GetIsolate(), global_proxy);\n  else\n    DCHECK(global_proxy_ == global_proxy);\n  CHECK(!global_proxy_.IsEmpty());\n\n#if DCHECK_IS_ON()\n  DidAttachGlobalObject();\n#endif\n\n  DCHECK(lifecycle_ == Lifecycle::kContextIsUninitialized ||\n         lifecycle_ == Lifecycle::kGlobalObjectIsDetached);\n  lifecycle_ = Lifecycle::kContextIsInitialized;\n}"
+          ]
+        }
+      ],
+      "blockNumber": 3
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "in this part:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "    v8::Local<v8::ObjectTemplate> global_template =\n      V8Window::GetWrapperTypeInfo()\n          ->GetV8ClassTemplate(GetIsolate(), *world_)\n          .As<v8::FunctionTemplate>()\n          ->InstanceTemplate();"
+          ]
+        }
+      ],
+      "blockNumber": 4
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "this builds the template that define what properties ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "w"
+          ]
+        },
+        " has.\n        ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "V8Window::GetWrapperTypeInfo()"
+          ]
+        },
+        " comes from v8_window.cc (built from the idl) this template includes cross origin properties for the remote dom window, like length."
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "  v8::Local<v8::Object> global_proxy =\n      v8::Context::NewRemoteContext(GetIsolate(), global_template,\n                                    global_proxy_.Get(GetIsolate()))\n          .ToLocalChecked();"
+          ]
+        }
+      ],
+      "blockNumber": 5
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "this line creates our ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "w"
+          ]
+        },
+        ". NewRemoteContext is V8 API that creates proxy object using template above. this proxy lives in our process but represents a window in another process, it only has the properties defined in ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "global_template"
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "in the ",
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=136-150",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:136-150"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "void RemoteWindowProxy::SetupWindowPrototypeChain() {\n  // Associate the global proxy and its prototype chain with the\n  // corresponding native DOMWindow object.\n  DOMWindow* window = GetFrame()->DomWindow();\n  const WrapperTypeInfo* wrapper_type_info = window->GetWrapperTypeInfo();\n\n  // The global proxy object.  Note this is not the global object.\n  v8::Local<v8::Object> global_proxy = global_proxy_.Get(GetIsolate());\n  // Set a link from both JSGlobalProxy and its hidden prototype (remote\n  // interceptor object) to the native DOMWindow object.\n  V8DOMWrapper::SetNativeInfoForGlobal(GetIsolate(), global_proxy, window);\n  CHECK(global_proxy == window->AssociateWithWrapper(GetIsolate(), world_,\n                                                     wrapper_type_info,\n                                                     global_proxy));\n}"
+          ]
+        }
+      ],
+      "blockNumber": 6
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "in this part:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "DOMWindow* window = GetFrame()->DomWindow();"
+          ]
+        }
+      ],
+      "blockNumber": 7
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "gets the Domwindow C++ object associated with this remote frame"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "in the ",
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=143-146",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:143-146"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "  v8::Local<v8::Object> global_proxy = global_proxy_.Get(GetIsolate());\n  // Set a link from both JSGlobalProxy and its hidden prototype (remote\n  // interceptor object) to the native DOMWindow object.\n  V8DOMWrapper::SetNativeInfoForGlobal(GetIsolate(), global_proxy, window);"
+          ]
+        }
+      ],
+      "blockNumber": 8
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "link the js proxy object (our ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "w"
+          ]
+        },
+        ") to the C++ Domwindow object."
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "So when you call w.length, V8 hits the proxy -> finds the linked DomWindow -> calls DomWindow::length()"
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "  CHECK(global_proxy == window->AssociateWithWrapper(GetIsolate(), world_,\n                                                     wrapper_type_info,\n                                                     global_proxy));"
+          ]
+        }
+      ],
+      "blockNumber": 9
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "finalizes the 2-way link, now DomWindow knows about the proxy and the proxy knows about DomWindow"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "so when you call w.length:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-javascript"
+          },
+          "children": [
+            "w                          -> global_proxy (created by NewRemoteContext)\n  .length                  -> V8 checks global_template -> \"length\" is allowed\n    -> finds linked DOMWindow via SetNativeInfoForGlobal\n      -> calls DOMWindow::length()\n        -> GetFrame()->Tree().ScopedChildCount()\n          -> returns 3"
+          ]
+        }
+      ],
+      "blockNumber": 10
+    },
+    "\n",
+    {
+      "tag": "h3",
+      "props": {
+        "id": "how-it-count"
+      },
+      "children": [
+        "How it count ?"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "so we now know how window refernced and how it works, now ill explain how chromium counts the frames inside window"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "in ",
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/dom_window.cc;l=310-314",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/core/frame/dom_window.cc:310-314"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "unsigned DOMWindow::length() const {\n  RecordWindowProxyAccessMetrics(\n      mojom::blink::WindowProxyAccessType::kLength);\n  return GetFrame() ? GetFrame()->Tree().ScopedChildCount() : 0;\n}"
+          ]
+        }
+      ],
+      "blockNumber": 11
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "this is the .length function, in this line ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "return GetFrame() ? GetFrame()->Tree().ScopedChildCount() : 0;"
+          ]
+        },
+        " the GetFrame() is function that checks if the frame is exist and not null, the comment below explain everything"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/dom_window.h;l=62-76",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/core/frame/dom_window.h:62-76"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "  Frame* GetFrame() const {\n    // A Frame is typically reused for navigations. If |frame_| is not null,\n    // two conditions must always be true:\n    // - |frame_->domWindow()| must point back to this DOMWindow. If it does\n    //   not, it is easy to introduce a bug where script execution uses the\n    //   wrong DOMWindow (which may be cross-origin).\n    // - |frame_| must be attached, i.e. |frame_->page()| must not be null.\n    //   If |frame_->page()| is null, this indicates a bug where the frame was\n    //   detached but |frame_| was not set to null. This bug can lead to\n    //   issues where executing script incorrectly schedules work on a detached\n    //   frame.\n    SECURITY_DCHECK(!frame_ ||\n                    (frame_->DomWindow() == this && frame_->GetPage()));\n    return frame_.Get();\n  }"
+          ]
+        }
+      ],
+      "blockNumber": 12
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "ok lets back to length() function, its check if the frame exist and if its exist it will get FrameTree by calling Tree(), Tree() function return parent/child relationships between frames"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "after that it will call ScopedChildCount() function:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=164-176",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/core/page/frame_tree.cc:164-176"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "unsigned FrameTree::ScopedChildCount() const {\n  if (scoped_child_count_ == kInvalidChildCount) {\n    unsigned scoped_count = 0;\n    for (Frame* child = FirstChild(); child;\n         child = child->Tree().NextSibling()) {\n      if (child->Client()->InShadowTree())\n        continue;\n      scoped_count++;\n    }\n    scoped_child_count_ = scoped_count;\n  }\n  return scoped_child_count_;\n}"
+          ]
+        }
+      ],
+      "blockNumber": 13
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "this function the core of the count, first ",
+        {
+          "tag": "code",
+          "props": {},
+          "children": [
+            "scoped_child_count_ == kInvalidChildCount"
+          ]
+        },
+        " it checks if the count didnt cached because:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=43",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/core/page/frame_tree.cc:43"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "const unsigned kInvalidChildCount = ~0U;"
+          ]
+        }
+      ],
+      "blockNumber": 14
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "and"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=47-48",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/core/page/frame_tree.cc:47-48"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            " FrameTree::FrameTree(Frame* this_frame)\n    : this_frame_(this_frame), scoped_child_count_(kInvalidChildCount) {}"
+          ]
+        }
+      ],
+      "blockNumber": 15
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "they make a special number that checks if the frames cached or not"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "the special number is bitwise NOT of unsigned zero=4294967295 and they set the number in kInvalidChildCount and scoped_child_count_."
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "if the scoped_child_count_ and kInvalidChildCount = 4294967295 thats means they didnt counted yet so it will the for loop inside the if condition."
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "    for (Frame* child = FirstChild(); child;\n         child = child->Tree().NextSibling()) {\n      if (child->Client()->InShadowTree())\n        continue;\n      scoped_count++;\n    }"
+          ]
+        }
+      ],
+      "blockNumber": 16
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "in the for loop it linked list traversal. start with the first child frame until child is null, and each iteration move to next sibling"
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "if (child->Client()->InShadowTree())\n    continue;"
+          ]
+        }
+      ],
+      "blockNumber": 17
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "if the frame lives inside Shadow dom skip it and dont count it."
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "ok now we know how the frames are count, but why they are can used even in cross origin ?."
+      ]
+    },
+    "\n",
+    {
+      "tag": "h2",
+      "props": {
+        "id": "the-key-of-the-frame-counting"
+      },
+      "children": [
+        "The key of the Frame counting"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "first we need to know what is Web IDL"
+      ]
+    },
+    "\n",
+    {
+      "tag": "blockquote",
+      "props": {},
+      "children": [
+        "\n",
+        {
+          "tag": "p",
+          "props": {},
+          "children": [
+            "Web IDL, that can be used to describe interfaces that are intended to be implemented in web browsers. Web IDL is an IDL variant with a number of features that allow the behavior of common script objects in the web platform to be specified more readily. How interfaces described with Web IDL correspond to constructs within JavaScript execution environments"
+          ]
+        },
+        "\n"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "if you need know more about Web IDL:"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://www.chromium.org/developers/web-idl-interfaces/#web-idl"
+          },
+          "children": [
+            "https://www.chromium.org/developers/web-idl-interfaces/#web-idl"
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://webidl.spec.whatwg.org/"
+          },
+          "children": [
+            "https://webidl.spec.whatwg.org/"
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "ok now we know what is Web IDL"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        {
+          "tag": "a",
+          "props": {
+            "href": "https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/window.idl;l=62",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "third_party/blink/renderer/core/frame/window.idl:62"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "pre",
+      "props": {
+        "tabIndex": 0
+      },
+      "children": [
+        {
+          "tag": "code",
+          "props": {
+            "className": "language-cpp"
+          },
+          "children": [
+            "[Replaceable, CrossOrigin, Measure] readonly attribute unsigned long length;"
+          ]
+        }
+      ],
+      "blockNumber": 18
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "as we can see the length attribute inside window set as CrossOrigin"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "so we can access the .length for CrossOrigin site, and THIS IS THE KEY OF THE WHOLE LEAK!"
+      ]
+    },
+    "\n",
+    {
+      "tag": "h2",
+      "props": {
+        "id": "mitigations"
+      },
+      "children": [
+        "Mitigations"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "to mitigate this type of oracles, you can use"
+      ]
+    },
+    "\n",
+    {
+      "tag": "ol",
+      "props": {},
+      "children": [
+        "\n",
+        {
+          "tag": "li",
+          "props": {},
+          "children": [
+            "COOP (",
+            {
+              "tag": "code",
+              "props": {},
+              "children": [
+                "Cross-Origin-Opener-Policy: same-origin"
+              ]
+            },
+            "), severs the window.open() reference, the proxy becomes useless"
+          ]
+        },
+        "\n",
+        {
+          "tag": "li",
+          "props": {},
+          "children": [
+            "use Shadow Dom, as i mentioned it before if the frame is in shadow dom the chromium wont count it"
+          ]
+        },
+        "\n"
+      ]
+    },
+    "\n",
+    {
+      "tag": "h2",
+      "props": {
+        "id": "visual-overview"
+      },
+      "children": [
+        "Visual Overview"
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        "if you dont get it, i made a graph that explain everything"
+      ]
+    },
+    "\n",
+    {
+      "tag": "figure",
+      "props": {
+        "className": "diagram-figure"
+      },
+      "children": [
+        {
+          "tag": "a",
+          "props": {
+            "href": "assets/frame-counting.svg",
+            "rel": "noopener noreferrer",
+            "target": "_blank"
+          },
+          "children": [
+            {
+              "tag": "img",
+              "props": {
+                "alt": "Frame counting flowchart. w.length passes through RemoteWindowProxy and a CrossOrigin IDL check to DOMWindow::length(). If a frame exists, FrameTree::ScopedChildCount() counts non-shadow child frames or returns the cached count.",
+                "height": 2908,
+                "loading": "lazy",
+                "src": "assets/frame-counting.svg",
+                "width": 1137
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "tag": "figcaption",
+          "props": {},
+          "children": [
+            "Open the diagram at full size."
+          ]
+        }
+      ]
+    },
+    "\n",
+    {
+      "tag": "p",
+      "props": {},
+      "children": [
+        {
+          "tag": "strong",
+          "props": {},
+          "children": [
+            "See you in part 2 :)"
+          ]
+        }
+      ]
+    },
+    "\n"
+  ]
+}
