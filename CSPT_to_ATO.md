@@ -231,5 +231,3 @@ sequenceDiagram
         Note over V: Token is not sent
     end
 ```
-
-thank you for reading i hope you liked my simple blog, if you found a bug by this technuqie give me %10 of the bounty.. just joking 😂, good luck

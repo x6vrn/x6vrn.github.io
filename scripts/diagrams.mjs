@@ -42,13 +42,13 @@ export async function renderMermaidDiagram(source) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const input = resolve('public/blog-assets', `${basename}.mmd`);
-  await writeFile(input, source);
   const temporary = resolve('node_modules/.cache/anas-mermaid');
   await mkdir(temporary, { recursive: true });
+  const input = resolve(temporary, `${basename}.mmd`);
   const temporarySvg = resolve(temporary, `${basename}.svg`);
   let browser;
   try {
+    await writeFile(input, source);
     browser = await puppeteer.launch({
       executablePath: await installedBrowser(),
       args: ['--no-sandbox', '--disable-dev-shm-usage'],
@@ -97,6 +97,7 @@ export async function renderMermaidDiagram(source) {
     return { src, ...size };
   } finally {
     if (browser) await browser.close();
+    await rm(input, { force: true });
     await rm(temporarySvg, { force: true });
   }
 }
