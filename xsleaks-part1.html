@@ -10,9 +10,201 @@
   <meta property="og:description" content="A deep dive into frame-counting XS-Leaks and how they work internally in Chromium.">
   <meta property="og:type" content="website">
   <title>The Art of XS-Leak Attacks - Part 1 / Anas</title>
+  <script type="module" crossorigin src="/blog-assets/article-xH3nEzof.js"></script>
+  <link rel="modulepreload" crossorigin href="/blog-assets/mount-1Fd_oSLC.js">
+  <link rel="modulepreload" crossorigin href="/blog-assets/ArrowUpRight-BlCXx4GR.js">
+  <link rel="modulepreload" crossorigin href="/blog-assets/Article-BzBknBXK.js">
+  <link rel="stylesheet" crossorigin href="/blog-assets/mount-C52Ga7p1.css">
 </head>
 <body class="article-page">
-  <div id="root"></div>
-  <script type="module" src="/src/entry-article.jsx"></script>
+  <div id="root"><div class="site-shell" dir="ltr"><a class="skip-link" href="#main" lang="en">Skip to content</a><header class="site-header" id="top" lang="en"><a class="site-name" href="/">ANAS</a><nav aria-label="Main navigation"><a href="/#writing">Writing</a></nav></header><main id="main" class="article-main" lang="en"><div class="article-breadcrumb"><a class="back-link" href="index.html#writing" dir="ltr">← All writing</a></div><header class="article-header" dir="ltr"><div class="post-meta" dir="ltr"><span><span>XS-LEAKS</span><span><span class="meta-separator">/</span>CHROMIUM</span></span><span>7<!-- --> MIN READ</span></div><h1 dir="auto">The Art of XS-Leak Attacks - Part 1</h1><p class="article-subtitle" dir="auto">Frame Counting</p></header><div class="article-layout" dir="ltr"><article class="article-content" aria-label="Article" lang="en" dir="ltr">
+<p>Hello, im here to explain the internals of XS-Leak attacks. i wont give you a high-level overview of the oracle with a payload and call it a day, im here to show you how the leaks work in chromium, line by line.</p>
+<p>this all started because a friend asked me: &quot;why is there no explanation of XS-Leak oracles in the chromium source code?&quot; That question stuck in my head for days!. so i learned how chromium works (specific in blink), picked up C++, and took a deep dive into the source code to explain why and how the famous oracles in XS-Leaks actually work under the hood.</p>
+<blockquote>
+<p>if you dont know what XS-Leaks are, here are some resources:</p>
+<p><a href="https://xsleaks.dev/">https://xsleaks.dev/</a></p>
+<p><a href="https://book.jorianwoltjer.com/web/client-side/xs-leaks">https://book.jorianwoltjer.com/web/client-side/xs-leaks</a></p>
+</blockquote>
+<h2 id="frame-counting-leak">Frame counting leak</h2>
+<p>frame count leak is count how much is there frames in some page, we can count it even its in cross origin, also frames = (iframe, embed, object)
+        for example:</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">JavaScript</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 1" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 1"><code dir="ltr" class="language-javascript hljs">w = <span class="hljs-variable language_">window</span>.<span class="hljs-title function_">open</span>(<span class="hljs-string">&#x27;https://example.com&#x27;</span>); <span class="hljs-comment">// example.com has 2 iframes</span>
+w.<span class="hljs-property">length</span> <span class="hljs-comment">// 2</span></code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>ok we know the frame count is count frames in cross origin, but how it works internally</p>
+<h3 id="how-can-we-access-to-another-window">How can we access to another window ?</h3>
+<p>when we do window.open(), the browser process decides where to run the new page. if its same-site, it stays in the same renderer process and creates a LocalWindowProxy. if its cross-site, site isolation puts in a separate renderer process and creates a RemoteWindowProxy in your process to represent the cross-origin window. this proxy only expose the properties that marked [CrossOrigin] in the IDL, everything else is blocked</p>
+<p>i will deep dive in remote window proxy cuz this is our scope:</p>
+<p>first we need to know what is the remote window proxy.</p>
+<p>remote window proxy is the way to communicate with the another window, for example when we do:</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">JavaScript</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 2" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 2"><code dir="ltr" class="language-javascript hljs">w = <span class="hljs-variable language_">window</span>.<span class="hljs-title function_">open</span>(<span class="hljs-string">&#x27;https://example.com&#x27;</span>);</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>we will open new window and we will set the key of the window <code dir="ltr">w</code>, ok what is the <code dir="ltr">w</code> and is it the really window?, its not <code dir="ltr">w</code> is the Window Proxy that will make us communicate with example.com window.</p>
+<blockquote>
+<p>how is this possible?</p>
+</blockquote>
+<p>well in the <a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=107-134" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:107-134</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 3" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 3"><code dir="ltr" class="language-cpp hljs"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">RemoteWindowProxy::CreateContext</span><span class="hljs-params">()</span> </span>{
+  <span class="hljs-comment">// Create a new v8::Context with the window object as the global object</span>
+  <span class="hljs-comment">// (aka the inner global). Reuse the outer global proxy if it already exists.</span>
+  v8::Local&lt;v8::ObjectTemplate&gt; global_template =
+      V8Window::<span class="hljs-built_in">GetWrapperTypeInfo</span>()
+          -&gt;<span class="hljs-built_in">GetV8ClassTemplate</span>(<span class="hljs-built_in">GetIsolate</span>(), *world_)
+          .<span class="hljs-built_in">As</span>&lt;v8::FunctionTemplate&gt;()
+          -&gt;<span class="hljs-built_in">InstanceTemplate</span>();
+  <span class="hljs-built_in">CHECK</span>(!global_template.<span class="hljs-built_in">IsEmpty</span>());
+
+  v8::Local&lt;v8::Object&gt; global_proxy =
+      v8::Context::<span class="hljs-built_in">NewRemoteContext</span>(<span class="hljs-built_in">GetIsolate</span>(), global_template,
+                                    global_proxy_.<span class="hljs-built_in">Get</span>(<span class="hljs-built_in">GetIsolate</span>()))
+          .<span class="hljs-built_in">ToLocalChecked</span>();
+  <span class="hljs-keyword">if</span> (global_proxy_.<span class="hljs-built_in">IsEmpty</span>())
+    global_proxy_.<span class="hljs-built_in">Reset</span>(<span class="hljs-built_in">GetIsolate</span>(), global_proxy);
+  <span class="hljs-keyword">else</span>
+    <span class="hljs-built_in">DCHECK</span>(global_proxy_ == global_proxy);
+  <span class="hljs-built_in">CHECK</span>(!global_proxy_.<span class="hljs-built_in">IsEmpty</span>());
+
+<span class="hljs-meta">#<span class="hljs-keyword">if</span> DCHECK_IS_ON()</span>
+  <span class="hljs-built_in">DidAttachGlobalObject</span>();
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+
+  <span class="hljs-built_in">DCHECK</span>(lifecycle_ == Lifecycle::kContextIsUninitialized ||
+         lifecycle_ == Lifecycle::kGlobalObjectIsDetached);
+  lifecycle_ = Lifecycle::kContextIsInitialized;
+}</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>in this part:</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 4" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 4"><code dir="ltr" class="language-cpp hljs">    v8::Local&lt;v8::ObjectTemplate&gt; global_template =
+      V8Window::<span class="hljs-built_in">GetWrapperTypeInfo</span>()
+          -&gt;<span class="hljs-built_in">GetV8ClassTemplate</span>(<span class="hljs-built_in">GetIsolate</span>(), *world_)
+          .<span class="hljs-built_in">As</span>&lt;v8::FunctionTemplate&gt;()
+          -&gt;<span class="hljs-built_in">InstanceTemplate</span>();</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>this builds the template that define what properties <code dir="ltr">w</code> has.
+        <code dir="ltr">V8Window::GetWrapperTypeInfo()</code> comes from v8_window.cc (built from the idl) this template includes cross origin properties for the remote dom window, like length.</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 5" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 5"><code dir="ltr" class="language-cpp hljs">  v8::Local&lt;v8::Object&gt; global_proxy =
+      v8::Context::<span class="hljs-built_in">NewRemoteContext</span>(<span class="hljs-built_in">GetIsolate</span>(), global_template,
+                                    global_proxy_.<span class="hljs-built_in">Get</span>(<span class="hljs-built_in">GetIsolate</span>()))
+          .<span class="hljs-built_in">ToLocalChecked</span>();</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>this line creates our <code dir="ltr">w</code>. NewRemoteContext is V8 API that creates proxy object using template above. this proxy lives in our process but represents a window in another process, it only has the properties defined in <code dir="ltr">global_template</code></p>
+<p>in the <a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=136-150" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:136-150</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 6" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 6"><code dir="ltr" class="language-cpp hljs"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">RemoteWindowProxy::SetupWindowPrototypeChain</span><span class="hljs-params">()</span> </span>{
+  <span class="hljs-comment">// Associate the global proxy and its prototype chain with the</span>
+  <span class="hljs-comment">// corresponding native DOMWindow object.</span>
+  DOMWindow* window = <span class="hljs-built_in">GetFrame</span>()-&gt;<span class="hljs-built_in">DomWindow</span>();
+  <span class="hljs-type">const</span> WrapperTypeInfo* wrapper_type_info = window-&gt;<span class="hljs-built_in">GetWrapperTypeInfo</span>();
+
+  <span class="hljs-comment">// The global proxy object.  Note this is not the global object.</span>
+  v8::Local&lt;v8::Object&gt; global_proxy = global_proxy_.<span class="hljs-built_in">Get</span>(<span class="hljs-built_in">GetIsolate</span>());
+  <span class="hljs-comment">// Set a link from both JSGlobalProxy and its hidden prototype (remote</span>
+  <span class="hljs-comment">// interceptor object) to the native DOMWindow object.</span>
+  V8DOMWrapper::<span class="hljs-built_in">SetNativeInfoForGlobal</span>(<span class="hljs-built_in">GetIsolate</span>(), global_proxy, window);
+  <span class="hljs-built_in">CHECK</span>(global_proxy == window-&gt;<span class="hljs-built_in">AssociateWithWrapper</span>(<span class="hljs-built_in">GetIsolate</span>(), world_,
+                                                     wrapper_type_info,
+                                                     global_proxy));
+}</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>in this part:</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 7" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 7"><code dir="ltr" class="language-cpp hljs">DOMWindow* window = <span class="hljs-built_in">GetFrame</span>()-&gt;<span class="hljs-built_in">DomWindow</span>();</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>gets the Domwindow C++ object associated with this remote frame</p>
+<p>in the <a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc;l=143-146" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/bindings/core/v8/remote_window_proxy.cc:143-146</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 8" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 8"><code dir="ltr" class="language-cpp hljs">  v8::Local&lt;v8::Object&gt; global_proxy = global_proxy_.<span class="hljs-built_in">Get</span>(<span class="hljs-built_in">GetIsolate</span>());
+  <span class="hljs-comment">// Set a link from both JSGlobalProxy and its hidden prototype (remote</span>
+  <span class="hljs-comment">// interceptor object) to the native DOMWindow object.</span>
+  V8DOMWrapper::<span class="hljs-built_in">SetNativeInfoForGlobal</span>(<span class="hljs-built_in">GetIsolate</span>(), global_proxy, window);</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>link the js proxy object (our <code dir="ltr">w</code>) to the C++ Domwindow object.</p>
+<p>So when you call w.length, V8 hits the proxy -&gt; finds the linked DomWindow -&gt; calls DomWindow::length()</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 9" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 9"><code dir="ltr" class="language-cpp hljs">  <span class="hljs-built_in">CHECK</span>(global_proxy == window-&gt;<span class="hljs-built_in">AssociateWithWrapper</span>(<span class="hljs-built_in">GetIsolate</span>(), world_,
+                                                     wrapper_type_info,
+                                                     global_proxy));</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>finalizes the 2-way link, now DomWindow knows about the proxy and the proxy knows about DomWindow</p>
+<p>so when you call w.length:</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">JavaScript</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 10" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 10"><code dir="ltr" class="language-javascript hljs">w                          -&gt; <span class="hljs-title function_">global_proxy</span> (created by <span class="hljs-title class_">NewRemoteContext</span>)
+  .<span class="hljs-property">length</span>                  -&gt; <span class="hljs-variable constant_">V8</span> checks global_template -&gt; <span class="hljs-string">&quot;length&quot;</span> is allowed
+    -&gt; finds linked <span class="hljs-title class_">DOMWindow</span> via <span class="hljs-title class_">SetNativeInfoForGlobal</span>
+      -&gt; calls <span class="hljs-title class_">DOMWindow</span>::<span class="hljs-title function_">length</span>()
+        -&gt; <span class="hljs-title class_">GetFrame</span>()-&gt;<span class="hljs-title class_">Tree</span>().<span class="hljs-title class_">ScopedChildCount</span>()
+          -&gt; returns <span class="hljs-number">3</span></code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<h3 id="how-it-count">How it count ?</h3>
+<p>so we now know how window refernced and how it works, now ill explain how chromium counts the frames inside window</p>
+<p>in <a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/dom_window.cc;l=310-314" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/core/frame/dom_window.cc:310-314</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 11" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 11"><code dir="ltr" class="language-cpp hljs"><span class="hljs-function"><span class="hljs-type">unsigned</span> <span class="hljs-title">DOMWindow::length</span><span class="hljs-params">()</span> <span class="hljs-type">const</span> </span>{
+  <span class="hljs-built_in">RecordWindowProxyAccessMetrics</span>(
+      mojom::blink::WindowProxyAccessType::kLength);
+  <span class="hljs-keyword">return</span> <span class="hljs-built_in">GetFrame</span>() ? <span class="hljs-built_in">GetFrame</span>()-&gt;<span class="hljs-built_in">Tree</span>().<span class="hljs-built_in">ScopedChildCount</span>() : <span class="hljs-number">0</span>;
+}</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>this is the .length function, in this line <code dir="ltr">return GetFrame() ? GetFrame()-&gt;Tree().ScopedChildCount() : 0;</code> the GetFrame() is function that checks if the frame is exist and not null, the comment below explain everything</p>
+<p><a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/dom_window.h;l=62-76" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/core/frame/dom_window.h:62-76</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 12" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 12"><code dir="ltr" class="language-cpp hljs">  <span class="hljs-function">Frame* <span class="hljs-title">GetFrame</span><span class="hljs-params">()</span> <span class="hljs-type">const</span> </span>{
+    <span class="hljs-comment">// A Frame is typically reused for navigations. If |frame_| is not null,</span>
+    <span class="hljs-comment">// two conditions must always be true:</span>
+    <span class="hljs-comment">// - |frame_-&gt;domWindow()| must point back to this DOMWindow. If it does</span>
+    <span class="hljs-comment">//   not, it is easy to introduce a bug where script execution uses the</span>
+    <span class="hljs-comment">//   wrong DOMWindow (which may be cross-origin).</span>
+    <span class="hljs-comment">// - |frame_| must be attached, i.e. |frame_-&gt;page()| must not be null.</span>
+    <span class="hljs-comment">//   If |frame_-&gt;page()| is null, this indicates a bug where the frame was</span>
+    <span class="hljs-comment">//   detached but |frame_| was not set to null. This bug can lead to</span>
+    <span class="hljs-comment">//   issues where executing script incorrectly schedules work on a detached</span>
+    <span class="hljs-comment">//   frame.</span>
+    <span class="hljs-built_in">SECURITY_DCHECK</span>(!frame_ ||
+                    (frame_-&gt;<span class="hljs-built_in">DomWindow</span>() == <span class="hljs-keyword">this</span> &amp;&amp; frame_-&gt;<span class="hljs-built_in">GetPage</span>()));
+    <span class="hljs-keyword">return</span> frame_.<span class="hljs-built_in">Get</span>();
+  }</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>ok lets back to length() function, its check if the frame exist and if its exist it will get FrameTree by calling Tree(), Tree() function return parent/child relationships between frames</p>
+<p>after that it will call ScopedChildCount() function:</p>
+<p><a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=164-176" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/core/page/frame_tree.cc:164-176</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 13" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 13"><code dir="ltr" class="language-cpp hljs"><span class="hljs-function"><span class="hljs-type">unsigned</span> <span class="hljs-title">FrameTree::ScopedChildCount</span><span class="hljs-params">()</span> <span class="hljs-type">const</span> </span>{
+  <span class="hljs-keyword">if</span> (scoped_child_count_ == kInvalidChildCount) {
+    <span class="hljs-type">unsigned</span> scoped_count = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">for</span> (Frame* child = <span class="hljs-built_in">FirstChild</span>(); child;
+         child = child-&gt;<span class="hljs-built_in">Tree</span>().<span class="hljs-built_in">NextSibling</span>()) {
+      <span class="hljs-keyword">if</span> (child-&gt;<span class="hljs-built_in">Client</span>()-&gt;<span class="hljs-built_in">InShadowTree</span>())
+        <span class="hljs-keyword">continue</span>;
+      scoped_count++;
+    }
+    scoped_child_count_ = scoped_count;
+  }
+  <span class="hljs-keyword">return</span> scoped_child_count_;
+}</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>this function the core of the count, first <code dir="ltr">scoped_child_count_ == kInvalidChildCount</code> it checks if the count didnt cached because:</p>
+<p><a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=43" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/core/page/frame_tree.cc:43</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 14" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 14"><code dir="ltr" class="language-cpp hljs"><span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> kInvalidChildCount = ~<span class="hljs-number">0U</span>;</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>and</p>
+<p><a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/frame_tree.cc;l=47-48" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/core/page/frame_tree.cc:47-48</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 15" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 15"><code dir="ltr" class="language-cpp hljs"> FrameTree::<span class="hljs-built_in">FrameTree</span>(Frame* this_frame)
+    : this_frame_(this_frame), <span class="hljs-built_in">scoped_child_count_</span>(kInvalidChildCount) {}</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>they make a special number that checks if the frames cached or not</p>
+<p>the special number is bitwise NOT of unsigned zero=4294967295 and they set the number in kInvalidChildCount and scoped_child_count_.</p>
+<p>if the scoped_child_count_ and kInvalidChildCount = 4294967295 thats means they didnt counted yet so it will the for loop inside the if condition.</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 16" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 16"><code dir="ltr" class="language-cpp hljs">    <span class="hljs-keyword">for</span> (Frame* child = <span class="hljs-built_in">FirstChild</span>(); child;
+         child = child-&gt;<span class="hljs-built_in">Tree</span>().<span class="hljs-built_in">NextSibling</span>()) {
+      <span class="hljs-keyword">if</span> (child-&gt;<span class="hljs-built_in">Client</span>()-&gt;<span class="hljs-built_in">InShadowTree</span>())
+        <span class="hljs-keyword">continue</span>;
+      scoped_count++;
+    }</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>in the for loop it linked list traversal. start with the first child frame until child is null, and each iteration move to next sibling</p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 17" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 17"><code dir="ltr" class="language-cpp hljs"><span class="hljs-keyword">if</span> (child-&gt;<span class="hljs-built_in">Client</span>()-&gt;<span class="hljs-built_in">InShadowTree</span>())
+    <span class="hljs-keyword">continue</span>;</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>if the frame lives inside Shadow dom skip it and dont count it.</p>
+<p>ok now we know how the frames are count, but why they are can used even in cross origin ?.</p>
+<h2 id="the-key-of-the-frame-counting">The key of the Frame counting</h2>
+<p>first we need to know what is Web IDL</p>
+<blockquote>
+<p>Web IDL, that can be used to describe interfaces that are intended to be implemented in web browsers. Web IDL is an IDL variant with a number of features that allow the behavior of common script objects in the web platform to be specified more readily. How interfaces described with Web IDL correspond to constructs within JavaScript execution environments</p>
+</blockquote>
+<p>if you need know more about Web IDL:</p>
+<p><a href="https://www.chromium.org/developers/web-idl-interfaces/#web-idl">https://www.chromium.org/developers/web-idl-interfaces/#web-idl</a></p>
+<p><a href="https://webidl.spec.whatwg.org/">https://webidl.spec.whatwg.org/</a></p>
+<p>ok now we know what is Web IDL</p>
+<p><a href="https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/window.idl;l=62" rel="noopener noreferrer" target="_blank"><code dir="ltr">third_party/blink/renderer/core/frame/window.idl:62</code></a></p>
+<div class="code-block" dir="ltr"><div class="code-toolbar"><span lang="en">C++ / Chromium</span><button class="copy-button" type="button" hidden="" aria-label="Copy code block 18" lang="en">Copy</button></div><pre tabindex="0" dir="ltr" role="region" aria-label="Code block 18"><code dir="ltr" class="language-cpp hljs">[Replaceable, CrossOrigin, Measure] readonly attribute <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> length;</code></pre><span class="copy-status" role="status" aria-live="polite" lang="en"></span></div>
+<p>as we can see the length attribute inside window set as CrossOrigin</p>
+<p>so we can access the .length for CrossOrigin site, and THIS IS THE KEY OF THE WHOLE LEAK!</p>
+<h2 id="mitigations">Mitigations</h2>
+<p>to mitigate this type of oracles, you can use</p>
+<ol>
+<li>COOP (<code dir="ltr">Cross-Origin-Opener-Policy: same-origin</code>), severs the window.open() reference, the proxy becomes useless</li>
+<li>use Shadow Dom, as i mentioned it before if the frame is in shadow dom the chromium wont count it</li>
+</ol>
+<h2 id="visual-overview">Visual Overview</h2>
+<p>if you dont get it, i made a graph that explain everything</p>
+<figure class="diagram-figure"><a href="blog-assets/frame-counting.svg" rel="noopener noreferrer" target="_blank"><img alt="Frame counting flowchart. w.length passes through RemoteWindowProxy and a CrossOrigin IDL check to DOMWindow::length(). If a frame exists, FrameTree::ScopedChildCount() counts non-shadow child frames or returns the cached count." height="2908" loading="lazy" src="blog-assets/frame-counting.svg" width="1137"/></a><figcaption>Open the diagram at full size.</figcaption></figure>
+<p><strong>See you in part 2 :)</strong></p>
+<div class="article-end" dir="ltr"><a href="index.html#writing">← All writing</a></div></article><aside class="article-sidebar" lang="en" dir="ltr"><details class="toc"><summary>CONTENTS</summary><nav aria-label="Table of contents"><ol><li class="toc-h2"><a href="#frame-counting-leak">Frame counting leak</a></li><li class="toc-h3"><a href="#how-can-we-access-to-another-window">How can we access to another window ?</a></li><li class="toc-h3"><a href="#how-it-count">How it count ?</a></li><li class="toc-h2"><a href="#the-key-of-the-frame-counting">The key of the Frame counting</a></li><li class="toc-h2"><a href="#mitigations">Mitigations</a></li><li class="toc-h2"><a href="#visual-overview">Visual Overview</a></li></ol></nav></details></aside></div></main><footer class="site-footer" lang="en"><span>Anas <span class="footer-separator">/</span> Web security research</span><a href="#top">Back to top ↑</a></footer></div></div>
 </body>
 </html>
