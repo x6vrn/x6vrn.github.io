@@ -10,14 +10,14 @@
   <meta property="og:description" content="A deep dive into frame-counting XS-Leaks and how they work internally in Chromium.">
   <meta property="og:type" content="website">
   <title>The Art of XS-Leak Attacks - Part 1 / Anas</title>
-  <script type="module" crossorigin src="/blog-assets/article-xH3nEzof.js"></script>
-  <link rel="modulepreload" crossorigin href="/blog-assets/mount-1Fd_oSLC.js">
-  <link rel="modulepreload" crossorigin href="/blog-assets/ArrowUpRight-BlCXx4GR.js">
-  <link rel="modulepreload" crossorigin href="/blog-assets/Article-BzBknBXK.js">
+  <script type="module" crossorigin src="/blog-assets/article-xUwWBMGL.js"></script>
+  <link rel="modulepreload" crossorigin href="/blog-assets/mount-CKAlZLWO.js">
+  <link rel="modulepreload" crossorigin href="/blog-assets/ArrowUpRight-RdPRmfFM.js">
+  <link rel="modulepreload" crossorigin href="/blog-assets/Article-B5rt8uss.js">
   <link rel="stylesheet" crossorigin href="/blog-assets/mount-C52Ga7p1.css">
 </head>
 <body class="article-page">
-  <div id="root"><div class="site-shell" dir="ltr"><a class="skip-link" href="#main" lang="en">Skip to content</a><header class="site-header" id="top" lang="en"><a class="site-name" href="/">ANAS</a><nav aria-label="Main navigation"><a href="/#writing">Writing</a></nav></header><main id="main" class="article-main" lang="en"><div class="article-breadcrumb"><a class="back-link" href="index.html#writing" dir="ltr">← All writing</a></div><header class="article-header" dir="ltr"><div class="post-meta" dir="ltr"><span><span>XS-LEAKS</span><span><span class="meta-separator">/</span>CHROMIUM</span></span><span>7<!-- --> MIN READ</span></div><h1 dir="auto">The Art of XS-Leak Attacks - Part 1</h1><p class="article-subtitle" dir="auto">Frame Counting</p></header><div class="article-layout" dir="ltr"><article class="article-content" aria-label="Article" lang="en" dir="ltr">
+  <div id="root"><div class="site-shell" dir="ltr"><a class="skip-link" href="#main" lang="en">Skip to content</a><header class="site-header" id="top" lang="en"><a class="site-name" href="/">ANAS</a><nav aria-label="Main navigation"><a href="/#writing">articles</a></nav></header><main id="main" class="article-main" lang="en"><div class="article-breadcrumb"><a class="back-link" href="index.html#writing" dir="ltr">← All writing</a></div><header class="article-header" dir="ltr"><div class="post-meta" dir="ltr"><span><span>XS-LEAKS</span><span><span class="meta-separator">/</span>CHROMIUM</span></span><span>7<!-- --> MIN READ</span></div><h1 dir="auto">The Art of XS-Leak Attacks - Part 1</h1><p class="article-subtitle" dir="auto">Frame Counting</p></header><div class="article-layout" dir="ltr"><article class="article-content" aria-label="Article" lang="en" dir="ltr">
 <p>Hello, im here to explain the internals of XS-Leak attacks. i wont give you a high-level overview of the oracle with a payload and call it a day, im here to show you how the leaks work in chromium, line by line.</p>
 <p>this all started because a friend asked me: &quot;why is there no explanation of XS-Leak oracles in the chromium source code?&quot; That question stuck in my head for days!. so i learned how chromium works (specific in blink), picked up C++, and took a deep dive into the source code to explain why and how the famous oracles in XS-Leaks actually work under the hood.</p>
 <blockquote>

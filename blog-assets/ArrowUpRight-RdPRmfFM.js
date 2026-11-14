@@ -1,0 +1,1 @@
+import{r as e}from"./mount-CKAlZLWO.js";var t=e();function n(){return(0,t.jsx)(`svg`,{className:`arrow-up-right`,xmlns:`http://www.w3.org/2000/svg`,viewBox:`0 0 24 24`,fill:`none`,stroke:`currentColor`,strokeWidth:`1.5`,strokeLinecap:`round`,strokeLinejoin:`round`,"aria-hidden":`true`,focusable:`false`,children:(0,t.jsx)(`path`,{d:`M7 17 17 7M7 7h10v10`})})}export{n as t};

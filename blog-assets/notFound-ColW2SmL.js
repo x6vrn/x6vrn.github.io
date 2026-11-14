@@ -1,1 +1,0 @@
-import{n as e,r as t,t as n}from"./mount-1Fd_oSLC.js";var r=t();function i(){return(0,r.jsx)(e,{children:(0,r.jsxs)(`main`,{id:`main`,className:`not-found`,children:[(0,r.jsx)(`span`,{className:`post-meta`,children:`404`}),(0,r.jsx)(`h1`,{children:`Page not found.`}),(0,r.jsx)(`a`,{className:`back-link`,href:`/`,children:`← Home`})]})})}n(i);
