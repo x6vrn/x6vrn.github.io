@@ -1,9 +1,9 @@
-# Title: CSPT + Open Redirect = Account Takeover?
+# CSPT + Open Redirect = Account Takeover?
 
 
 ## what is CSPT
 
-CSPT (Client side path traversal) its a vulnerability about path traversal in the browwser, URLs. it happens when an application fetches some path with your input in it, allowing you to use `../` and other special characters to rewrite the path to somewhere else
+CSPT (Client side path traversal) its a vulnerability about path traversal in the browser, URLs. it happens when an application fetches some path with your input in it, allowing you to use `../` and other special characters to rewrite the path to somewhere else
 
 
 example:

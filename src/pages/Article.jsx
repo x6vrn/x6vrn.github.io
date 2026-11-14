@@ -6,11 +6,29 @@ import MermaidDiagram from '../components/MermaidDiagram';
 const hasArabic = value => /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/.test(value);
 const nodeText = node => typeof node === 'string' ? node : node.children.map(nodeText).join('');
 
-// Bidi markup isolates technical terms without adding directional characters to the text.
+// Match the English contents casing while retaining acronyms such as CSPT and CORS.
+const arabicContentsLabel = title => title.replace(/\b(?:Redirects|Headers|Open Redirect|Authentication Token)\b/g, phrase => phrase.toLowerCase());
+
+function balancedBrackets(text) {
+  const opening = '([{';
+  const closing = ')]}';
+  const stack = [];
+  for (const character of text) {
+    if (opening.includes(character)) stack.push(character);
+    else if (closing.includes(character) && stack.pop() !== opening[closing.indexOf(character)]) return false;
+  }
+  return stack.length === 0;
+}
+
+// Keep parentheses around mixed Arabic/English phrases in the surrounding RTL text.
+// Balanced English phrases, such as CSPT (Client side path traversal), stay together.
 function isolatedText(text) {
-  return text.split(/([\x00-\x7f]+)/).map((part, index) => {
+  return text.split(/([\x00-\x7f]+)/).flatMap(part => (
+    balancedBrackets(part) ? [part] : part.split(/([()[\]{}])/)
+  )).map((part, index) => {
     if (!/[A-Za-z0-9]/.test(part) || hasArabic(part)) return part;
-    const match = /^(\s*)([\s\S]*?\S)(\s*)$/.exec(part);
+    // Sentence punctuation belongs to the paragraph rather than the English term.
+    const match = /^([\s.,;:!?"']*)([\s\S]*?)([\s.,;:!?"']*)$/.exec(part);
     return match ? <span key={index}>{match[1]}<bdi dir="ltr" lang="en">{match[2]}</bdi>{match[3]}</span> : part;
   });
 }
@@ -68,7 +86,7 @@ export default function Article({ post }) {
           <div className="article-end" dir={direction}><a href="index.html#writing">{arabic ? 'كل المقالات ←' : '← All writing'}</a></div>
         </article>
         <aside className="article-sidebar" lang={language} dir={direction}><details className="toc" open>
-          <summary>{arabic ? 'المحتويات' : 'CONTENTS'}</summary><nav aria-label={arabic ? 'محتويات المقال' : 'Table of contents'}><ol>{post.toc.map(section => <li key={section.id} className={`toc-${section.level}`}><a href={`#${section.id}`} aria-current={active === section.id ? 'location' : undefined}>{arabic ? isolatedText(section.title) : section.title}</a></li>)}</ol></nav>
+          <summary>{arabic ? 'المحتويات' : 'CONTENTS'}</summary><nav aria-label={arabic ? 'محتويات المقال' : 'Table of contents'}><ol>{post.toc.map(section => <li key={section.id} className={`toc-${section.level}`}><a href={`#${section.id}`} aria-current={active === section.id ? 'location' : undefined}>{arabic ? isolatedText(arabicContentsLabel(section.title)) : section.title}</a></li>)}</ol></nav>
         </details></aside>
       </div>
     </main>
